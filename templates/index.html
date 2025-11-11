@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Developer Tools Hub</title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <style>
+    /* small inline helper styles for transient UI (tooltip/flash) */
+    .flash {
+      position: fixed;
+      right: 24px;
+      bottom: 24px;
+      background: #22c55e;
+      color: #042617;
+      padding: 8px 12px;
+      border-radius: 10px;
+      font-weight: 700;
+      opacity: 0;
+      transform: translateY(8px);
+      pointer-events: none;
+      transition: all 260ms ease;
+      z-index: 9999;
+    }
+    .copy-tooltip {
+      position: absolute;
+      top: -28px;
+      right: 6px;
+      background: rgba(34,197,94,0.95);
+      color: #042617;
+      padding: 6px 8px;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      opacity: 0;
+      transform: translateY(6px);
+      transition: opacity 180ms ease, transform 180ms ease;
+      pointer-events: none;
+      z-index: 50;
+    }
+    .copy-tooltip.show { opacity: 1; transform: translateY(0); }
+    .copy-btn.copied {
+      color: #22c55e !important;
+      transform: scale(1.18);
+      text-shadow: 0 0 8px #22c55e;
+      transition: transform 160ms ease;
+    }
+  </style>
+</head>
+<body>
+  <button class="sidebar-toggle" onclick="toggleSidebar()">☰</button>
+
+  <div class="sidebar" id="sidebar">
+    <h2>Tools</h2>
+    <button id="nav-caesar" onclick="showPanel('caesar')">🔐 Caesar Cipher</button>
+    <button id="nav-base64" onclick="showPanel('base64')">🧩 Base64</button>
+    <button id="nav-sha256" onclick="showPanel('sha256')">🔒 SHA256</button>
+    <button id="nav-qr" onclick="showPanel('qr')">📱 QR Generator</button>
+  </div>
+
+  <div class="main">
+    <header>
+      <h1>DataForge Hub</h1>
+      <!-- <p>Encrypt, Decode, Hash, and Generate QR Codes effortlessly.</p> -->
+    </header>
+
+    <div class="panels">
+      <!-- Caesar -->
+      <div id="caesar" class="panel active">
+        <textarea id="caesar-input" placeholder="Enter text to encrypt/decrypt..."></textarea>
+        <div class="btn-row">
+            <button type="button" onclick="processTool('caesar','decrypt')">🔓 Decrypt</button>
+            <button type="button" onclick="processTool('caesar','encrypt')" class="secondary">🔐 Encrypt</button>
+            <button type="button" onclick="clearPanel('caesar')" class="secondary">🧹 Clear</button>
+        </div>
+        <div class="output-box" id="caesar-output-box" style="display:none;">
+          <pre class="output" id="caesar-output"></pre>
+          <button class="copy-btn" onclick="copyText(this,'caesar-output')">📋</button>
+          <div class="copy-tooltip" aria-hidden="true"></div>
+        </div>
+      </div>
+
+      <!-- Base64 -->
+      <div id="base64" class="panel">
+        <textarea id="base64-input" placeholder="Enter text to encode/decode..."></textarea>
+        <div class="btn-row">
+            <button type="button" onclick="processTool('base64','decode')">⬇️ Decode</button>
+            <button type="button" onclick="processTool('base64','encode')" class="secondary">⬆️ Encode</button>
+            <button type="button" onclick="clearPanel('base64')" class="secondary">🧹 Clear</button>
+        </div>
+        <div class="output-box" id="base64-output-box" style="display:none;">
+          <pre class="output" id="base64-output"></pre>
+          <button class="copy-btn" onclick="copyText(this,'base64-output')">📋</button>
+          <div class="copy-tooltip" aria-hidden="true"></div>
+        </div>
+      </div>
+
+      <!-- SHA256 -->
+      <div id="sha256" class="panel">
+        <textarea id="sha256-input" placeholder="Enter text to hash..."></textarea>
+        <div class="btn-row">
+            <button type="button" onclick="processTool('sha256','hash')">Generate Hash</button>
+            <button type="button" onclick="clearPanel('sha256')" class="secondary">🧹 Clear</button>
+        </div>
+        <div class="output-box" id="sha256-output-box" style="display:none;">
+          <pre class="output" id="sha256-output"></pre>
+          <button class="copy-btn" onclick="copyText(this,'sha256-output')">📋</button>
+          <div class="copy-tooltip" aria-hidden="true"></div>
+        </div>
+      </div>
+
+      <!-- QR -->
+    <div id="qr" class="panel">
+        <textarea id="qr-input" placeholder="Enter text to generate QR..."></textarea>
+        <div class="btn-row">
+            <button type="button" onclick="processTool('qr','generate')">Generate QR</button>
+            <button type="button" onclick="clearPanel('qr')" class="secondary">🧹 Clear</button>
+        </div>
+        <div class="output-box" id="qr-output-box" style="display:none;text-align:center;">
+            <img id="qr-img" class="qr-img" src="" alt="QR"
+                style="max-width:250px; margin-top:1rem; border:2px solid #ddd; padding:6px; border-radius:12px; box-shadow:0 4px 8px rgba(0,0,0,0.1);">
+        </div>
+    </div>
+    </div>
+  </div>
+
+  <div id="flash" class="flash" style="display:none;"></div>
+
+<script>
+/* ---------- UI helpers ---------- */
+function toggleSidebar(){ document.getElementById('sidebar').classList.toggle('collapsed'); }
+
+function showPanel(id){
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  document.querySelectorAll('.sidebar button').forEach(b=>b.classList.remove('active'));
+  const nav = document.getElementById('nav-' + id);
+  if(nav) nav.classList.add('active');
+  localStorage.setItem('activePanel', id);
+}
+
+// /* restore panel + local state */
+// window.addEventListener('DOMContentLoaded', () => {
+//   const last = localStorage.getItem('activePanel') || 'caesar';
+//   showPanel(last);
+
+//   ['caesar','base64','sha256','qr'].forEach(k=>{
+//     const inKey = localStorage.getItem(k + '-input');
+//     const outKey = localStorage.getItem(k + '-output');
+//     if(inKey && document.getElementById(k + '-input')) document.getElementById(k + '-input').value = inKey;
+//     if(outKey && document.getElementById(k + '-output')) {
+//       document.getElementById(k + '-output').innerText = outKey;
+//       document.getElementById(k + '-output-box').style.display = 'block';
+//     }
+//   });
+
+//   // QR restore
+//   const qrOut = localStorage.getItem('qr-output');
+//   if(qrOut) {
+//     const img = document.getElementById('qr-img'); img.src = qrOut;
+//     document.getElementById('qr-output-box').style.display = 'block';
+//   }
+// });
+
+// /* ---------- Core: call /process ---------- */
+// async function processTool(tool, action){
+//   const inputEl = document.getElementById(tool + '-input');
+//   if(!inputEl) return;
+//   const input = inputEl.value.trim();
+//   if(!input) return;
+
+//   try {
+//     const res = await fetch('/process', {
+//       method: 'POST',
+//       headers: {'Content-Type': 'application/json'},
+//       body: JSON.stringify({tool, action, input})
+//     });
+
+//     const data = await res.json();
+
+//     if(data.image){
+//       document.getElementById('qr-img').src = data.image;
+//       document.getElementById('qr-output-box').style.display = 'block';
+//       localStorage.setItem('qr-input', input);
+//       localStorage.setItem('qr-output', data.image);
+//       return;
+//     }
+
+//     if('result' in data){
+//       showOutput(tool, data.result);
+//       localStorage.setItem(tool + '-input', input);
+//       localStorage.setItem(tool + '-output', data.result);
+//     }
+
+//   } catch (err){
+//     console.error(err);
+//     showOutput(tool, 'Request failed: ' + err.message);
+//   }
+// }
+
+/* ---------- restore panel + local state ---------- */
+window.addEventListener('DOMContentLoaded', () => {
+  // Always start with default panel 'caesar' on page load
+  showPanel('caesar');
+
+  // Restore inputs/outputs only if switching sections during the same session
+  // Use sessionStorage instead of localStorage
+  ['caesar','base64','sha256','qr'].forEach(k=>{
+    const inKey = sessionStorage.getItem(k + '-input');
+    const outKey = sessionStorage.getItem(k + '-output');
+    if(inKey && document.getElementById(k + '-input')) document.getElementById(k + '-input').value = inKey;
+    if(outKey && document.getElementById(k + '-output')) {
+      document.getElementById(k + '-output').innerText = outKey;
+      document.getElementById(k + '-output-box').style.display = 'block';
+    }
+  });
+
+  // QR restore
+  const qrOut = sessionStorage.getItem('qr-output');
+  if(qrOut) {
+    const img = document.getElementById('qr-img'); img.src = qrOut;
+    document.getElementById('qr-output-box').style.display = 'block';
+  }
+});
+
+/* ---------- update processTool to use sessionStorage ---------- */
+async function processTool(tool, action){
+  const inputEl = document.getElementById(tool + '-input');
+  if(!inputEl) return;
+  const input = inputEl.value.trim();
+  if(!input) return;
+
+  try {
+    const res = await fetch('/process', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({tool, action, input})
+    });
+
+    const data = await res.json();
+
+    if(data.image){
+      document.getElementById('qr-img').src = data.image;
+      document.getElementById('qr-output-box').style.display = 'block';
+      sessionStorage.setItem('qr-input', input);
+      sessionStorage.setItem('qr-output', data.image);
+      return;
+    }
+
+    if('result' in data){
+      showOutput(tool, data.result);
+      sessionStorage.setItem(tool + '-input', input);
+      sessionStorage.setItem(tool + '-output', data.result);
+    }
+
+  } catch (err){
+    console.error(err);
+    showOutput(tool, 'Request failed: ' + err.message);
+  }
+}
+
+
+/* show textual result in UI */
+function showOutput(tool, text){
+  const outBox = document.getElementById(tool + '-output-box');
+  const pre = document.getElementById(tool + '-output');
+  if(!pre || !outBox) return;
+  pre.innerText = text;
+  outBox.style.display = 'block';
+}
+
+/* ---------- Copy helpers ---------- */
+function copyText(btn, outputId){
+  const text = document.getElementById(outputId)?.innerText;
+  if(!text) return;
+
+  navigator.clipboard.writeText(text).then(()=>{
+    const tip = btn.parentElement.querySelector('.copy-tooltip');
+    if(tip){
+      tip.innerText = 'Copied!';
+      tip.classList.add('show');
+      setTimeout(()=> tip.classList.remove('show'), 1000);
+    }
+  }).catch(e=> console.error('Copy failed', e));
+}
+
+// In-memory storage instead of localStorage for panel switching only
+const panelState = {};
+
+// Override previous localStorage restore
+window.addEventListener('DOMContentLoaded', () => {
+  const last = 'caesar'; // default active
+  showPanel(last);
+});
+
+// Clear panel input/output
+function clearPanel(panel){
+  const input = document.getElementById(panel + '-input');
+  const output = document.getElementById(panel + '-output');
+  const outputBox = document.getElementById(panel + '-output-box');
+
+  if(input) input.value = '';
+  if(output) output.innerText = '';
+  if(outputBox) outputBox.style.display = 'none';
+  panelState[panel] = { input: '', output: '' };
+
+  if(panel === 'qr') document.getElementById('qr-img').src = '';
+}
+
+// Save panel state only in-memory for switching
+function savePanelState(panel, inputVal, outputVal){
+  panelState[panel] = { input: inputVal, output: outputVal };
+}
+
+// Adjusted processTool to use in-memory state
+async function processTool(tool, action){
+  const inputEl = document.getElementById(tool + '-input');
+  if(!inputEl) return;
+  const input = inputEl.value.trim();
+  if(!input) return;
+
+  try {
+    const res = await fetch('/process', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({tool, action, input})
+    });
+
+    const data = await res.json();
+
+    if(data.image){
+      document.getElementById('qr-img').src = data.image;
+      document.getElementById('qr-output-box').style.display = 'block';
+      savePanelState('qr', input, data.image);
+      return;
+    }
+
+    if('result' in data){
+      showOutput(tool, data.result);
+      savePanelState(tool, input, data.result);
+    }
+
+  } catch (err){
+    console.error(err);
+    showOutput(tool, 'Request failed: ' + err.message);
+  }
+}
+
+/* ---------- Reset scroll to top on blur ---------- */
+['caesar','base64','sha256','qr'].forEach(id => {
+  const textarea = document.getElementById(id + '-input');
+  if(textarea){
+    textarea.addEventListener('blur', () => {
+      textarea.scrollTop = 0;
+    });
+  }
+});
+
+
+
+
+
+</script>
+
+
+</body>
+</html>
